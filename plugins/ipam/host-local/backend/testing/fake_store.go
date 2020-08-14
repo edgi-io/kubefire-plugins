@@ -26,6 +26,10 @@ type FakeStore struct {
 	lastReservedIP map[string]net.IP
 }
 
+func (s *FakeStore) GetRevokedIPbyID(id string, ifname string) (net.IP, error) {
+	panic("implement me")
+}
+
 // FakeStore implements the Store interface
 var _ backend.Store = &FakeStore{}
 
@@ -45,7 +49,7 @@ func (s *FakeStore) Close() error {
 	return nil
 }
 
-func (s *FakeStore) Reserve(id string, ifname string, ip net.IP, rangeID string) (bool, error) {
+func (s *FakeStore) Reserve(id string, ifname string, ip net.IP, rangeID string, lastIpFileUpdated bool) (bool, error) {
 	key := ip.String()
 	if _, ok := s.ipMap[key]; !ok {
 		s.ipMap[key] = id

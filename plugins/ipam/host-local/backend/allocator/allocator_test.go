@@ -88,7 +88,7 @@ var _ = Describe("host-local ip allocator", func() {
 
 		It("should loop correctly from the end", func() {
 			a := mkalloc()
-			a.store.Reserve("ID", "eth0", net.IP{192, 168, 1, 6}, a.rangeID)
+			a.store.Reserve("ID", "eth0", net.IP{192, 168, 1, 6}, a.rangeID, true)
 			a.store.ReleaseByID("ID", "eth0")
 			r, _ := a.GetIter()
 			Expect(r.nextip()).To(Equal(net.IP{192, 168, 1, 2}))
@@ -100,7 +100,7 @@ var _ = Describe("host-local ip allocator", func() {
 		})
 		It("should loop correctly from the middle", func() {
 			a := mkalloc()
-			a.store.Reserve("ID", "eth0", net.IP{192, 168, 1, 3}, a.rangeID)
+			a.store.Reserve("ID", "eth0", net.IP{192, 168, 1, 3}, a.rangeID, true)
 			a.store.ReleaseByID("ID", "eth0")
 			r, _ := a.GetIter()
 			Expect(r.nextip()).To(Equal(net.IP{192, 168, 1, 4}))

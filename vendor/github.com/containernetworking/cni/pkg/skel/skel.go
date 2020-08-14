@@ -269,7 +269,7 @@ func (t *dispatcher) pluginMain(cmdAdd, cmdCheck, cmdDel func(_ *CmdArgs) error,
 func PluginMainWithError(cmdAdd, cmdCheck, cmdDel func(_ *CmdArgs) error, versionInfo version.PluginInfo, about string) *types.Error {
 	return (&dispatcher{
 		Getenv: os.Getenv,
-		Stdin:  os.Stdin,
+		Stdin: os.Stdin,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	}).pluginMain(cmdAdd, cmdCheck, cmdDel, versionInfo, about)
