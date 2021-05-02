@@ -39,14 +39,18 @@ func TestTBF(t *testing.T) {
 	RunSpecs(t, "plugins/meta/bandwidth")
 }
 
-var echoServerBinaryPath string
+var echoServerBinaryPath, echoClientBinaryPath string
 
 var _ = SynchronizedBeforeSuite(func() []byte {
-	binaryPath, err := gexec.Build("github.com/containernetworking/plugins/pkg/testutils/echosvr")
+	serverBinaryPath, err := gexec.Build("github.com/containernetworking/plugins/pkg/testutils/echo/server")
 	Expect(err).NotTo(HaveOccurred())
-	return []byte(binaryPath)
+	clientBinaryPath, err := gexec.Build("github.com/containernetworking/plugins/pkg/testutils/echo/client")
+	Expect(err).NotTo(HaveOccurred())
+	return []byte(strings.Join([]string{serverBinaryPath, clientBinaryPath}, ","))
 }, func(data []byte) {
-	echoServerBinaryPath = string(data)
+	binaries := strings.Split(string(data), ",")
+	echoServerBinaryPath = binaries[0]
+	echoClientBinaryPath = binaries[1]
 })
 
 var _ = SynchronizedAfterSuite(func() {}, func() {
@@ -84,26 +88,25 @@ func startEchoServerInNamespace(netNS ns.NetNS) (int, *gexec.Session, error) {
 }
 
 func makeTcpClientInNS(netns string, address string, port int, numBytes int) {
-	message := bytes.Repeat([]byte{'a'}, numBytes)
+	payload := bytes.Repeat([]byte{'a'}, numBytes)
+	message := string(payload)
 
-	bin, err := exec.LookPath("nc")
-	Expect(err).NotTo(HaveOccurred())
 	var cmd *exec.Cmd
 	if netns != "" {
 		netns = filepath.Base(netns)
-		cmd = exec.Command("ip", "netns", "exec", netns, bin, "-v", address, strconv.Itoa(port))
+		cmd = exec.Command("ip", "netns", "exec", netns, echoClientBinaryPath, "--target", fmt.Sprintf("%s:%d", address, port), "--message", message)
 	} else {
-		cmd = exec.Command("nc", address, strconv.Itoa(port))
+		cmd = exec.Command(echoClientBinaryPath, "--target", fmt.Sprintf("%s:%d", address, port), "--message", message)
 	}
 	cmd.Stdin = bytes.NewBuffer([]byte(message))
 	cmd.Stderr = GinkgoWriter
 	out, err := cmd.Output()
 
 	Expect(err).NotTo(HaveOccurred())
-	Expect(string(out)).To(Equal(string(message)))
+	Expect(string(out)).To(Equal(message))
 }
 
-func createVeth(hostNamespace string, hostVethIfName string, containerNamespace string, containerVethIfName string, hostIP []byte, containerIP []byte, hostIfaceMTU int) {
+func createVeth(hostNs ns.NetNS, hostVethIfName string, containerNs ns.NetNS, containerVethIfName string, hostIP []byte, containerIP []byte, hostIfaceMTU int) {
 	vethDeviceRequest := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
 			Name:  hostVethIfName,
@@ -113,10 +116,7 @@ func createVeth(hostNamespace string, hostVethIfName string, containerNamespace 
 		PeerName: containerVethIfName,
 	}
 
-	hostNs, err := ns.GetNS(hostNamespace)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = hostNs.Do(func(_ ns.NetNS) error {
+	err := hostNs.Do(func(_ ns.NetNS) error {
 		if err := netlink.LinkAdd(vethDeviceRequest); err != nil {
 			return fmt.Errorf("creating veth pair: %s", err)
 		}
@@ -124,11 +124,6 @@ func createVeth(hostNamespace string, hostVethIfName string, containerNamespace 
 		containerVeth, err := netlink.LinkByName(containerVethIfName)
 		if err != nil {
 			return fmt.Errorf("failed to find newly-created veth device %q: %v", containerVethIfName, err)
-		}
-
-		containerNs, err := ns.GetNS(containerNamespace)
-		if err != nil {
-			return err
 		}
 
 		err = netlink.LinkSetNsFd(containerVeth, int(containerNs.Fd()))
@@ -166,8 +161,6 @@ func createVeth(hostNamespace string, hostVethIfName string, containerNamespace 
 	})
 	Expect(err).NotTo(HaveOccurred())
 
-	containerNs, err := ns.GetNS(containerNamespace)
-	Expect(err).NotTo(HaveOccurred())
 	err = containerNs.Do(func(_ ns.NetNS) error {
 		peerAddr := &net.IPNet{
 			IP:   hostIP,
@@ -200,7 +193,7 @@ func createVeth(hostNamespace string, hostVethIfName string, containerNamespace 
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func createVethInOneNs(namespace, vethName, peerName string) {
+func createVethInOneNs(netNS ns.NetNS, vethName, peerName string) {
 	vethDeviceRequest := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
 			Name:  vethName,
@@ -209,10 +202,7 @@ func createVethInOneNs(namespace, vethName, peerName string) {
 		PeerName: peerName,
 	}
 
-	netNS, err := ns.GetNS(namespace)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = netNS.Do(func(_ ns.NetNS) error {
+	err := netNS.Do(func(_ ns.NetNS) error {
 		if err := netlink.LinkAdd(vethDeviceRequest); err != nil {
 			return fmt.Errorf("failed to create veth pair: %v", err)
 		}
@@ -226,11 +216,8 @@ func createVethInOneNs(namespace, vethName, peerName string) {
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func createMacvlan(namespace, master, macvlanName string) {
-	netNS, err := ns.GetNS(namespace)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = netNS.Do(func(_ ns.NetNS) error {
+func createMacvlan(netNS ns.NetNS, master, macvlanName string) {
+	err := netNS.Do(func(_ ns.NetNS) error {
 		m, err := netlink.LinkByName(master)
 		if err != nil {
 			return fmt.Errorf("failed to lookup master %q: %v", master, err)
